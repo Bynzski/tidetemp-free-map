@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TideTemp Free Map</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2306475f'/%3E%3Ctext x='32' y='39' text-anchor='middle' font-family='Arial' font-size='22' font-weight='700' fill='white'%3ETT%3C/text%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://unpkg.com" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="map-area" aria-label="Map">
+        <div id="map"></div>
+        <form id="search-form" class="search-bar" autocomplete="off">
+          <div class="brand">
+            <span class="brand-mark">TT</span>
+            <span>TideTemp</span>
+          </div>
+          <label class="search-field">
+            <span class="sr-only">Search location</span>
+            <input id="location-input" name="location" type="search" placeholder="San Francisco, CA or 37.77,-122.42" />
+          </label>
+          <button type="submit">Search</button>
+          <button id="locate-btn" type="button" class="icon-btn" title="Use current location" aria-label="Use current location">
+            <span aria-hidden="true">◎</span>
+          </button>
+        </form>
+      </section>
+
+      <aside class="data-panel" aria-live="polite">
+        <header class="panel-header">
+          <div>
+            <p class="eyebrow">Free public APIs</p>
+            <h1 id="place-title">Choose a location</h1>
+          </div>
+          <div id="status-pill" class="status-pill">Idle</div>
+        </header>
+
+        <section id="summary" class="summary-grid"></section>
+
+        <nav class="tabs" aria-label="Data views">
+          <button class="tab is-active" data-tab="conditions" type="button">Conditions</button>
+          <button class="tab" data-tab="tides" type="button">Tides</button>
+          <button class="tab" data-tab="stations" type="button">Stations</button>
+          <button class="tab" data-tab="sources" type="button">Sources</button>
+        </nav>
+
+        <section id="conditions" class="tab-panel is-active">
+          <section id="visual-dashboard" class="visual-dashboard" aria-label="Visual weather dashboard">
+            <div class="condition-hero">
+              <div id="temp-orb" class="temp-orb">
+                <span id="temp-orb-value">--</span>
+                <small id="temp-orb-unit">°F</small>
+              </div>
+              <div class="hero-copy">
+                <p class="eyebrow">Right now</p>
+                <h2 id="visual-phrase">Loading visual story</h2>
+                <p id="visual-subline" class="muted">Comparing current conditions with recent archived weather.</p>
+              </div>
+            </div>
+
+            <div id="insight-grid" class="insight-grid"></div>
+
+            <article class="chart-card wide">
+              <div class="chart-head">
+                <div>
+                  <p class="eyebrow">Temperature arc</p>
+                  <h2>Last 30 days and next week</h2>
+                </div>
+                <span id="temp-trend-note" class="muted">Archive + forecast</span>
+              </div>
+              <div class="chart-wrap tall">
+                <canvas id="temp-trend-chart"></canvas>
+              </div>
+            </article>
+
+            <div class="chart-split">
+              <article class="chart-card">
+                <div class="chart-head">
+                  <div>
+                    <p class="eyebrow">Wind rhythm</p>
+                    <h2>Next 24 hours</h2>
+                  </div>
+                </div>
+                <div class="chart-wrap">
+                  <canvas id="wind-profile-chart"></canvas>
+                </div>
+              </article>
+
+              <article class="chart-card">
+                <div class="chart-head">
+                  <div>
+                    <p class="eyebrow">Moisture mix</p>
+                    <h2>Past vs forecast rain</h2>
+                  </div>
+                </div>
+                <div class="chart-wrap">
+                  <canvas id="precip-chart"></canvas>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <div id="weather-grid" class="metric-grid"></div>
+          <div class="section-row">
+            <h2>Marine</h2>
+            <span id="marine-distance" class="muted"></span>
+          </div>
+          <div id="marine-grid" class="metric-grid"></div>
+          <div class="section-row">
+            <h2>Air quality</h2>
+            <span id="aq-time" class="muted"></span>
+          </div>
+          <div id="air-grid" class="metric-grid compact"></div>
+          <div class="section-row">
+            <h2>Next 24 hours</h2>
+          </div>
+          <div id="hourly-strip" class="hourly-strip"></div>
+        </section>
+
+        <section id="tides" class="tab-panel">
+          <div class="section-row">
+            <h2>NOAA tide predictions</h2>
+            <span id="tide-station-label" class="muted"></span>
+          </div>
+          <article id="tide-visual-card" class="chart-card tide-visual-card">
+            <div class="chart-head">
+              <div>
+                <p class="eyebrow">Tide pulse</p>
+                <h2>Highs and lows</h2>
+              </div>
+              <span id="tide-range-note" class="muted"></span>
+            </div>
+            <div class="chart-wrap">
+              <canvas id="tide-line-chart"></canvas>
+            </div>
+          </article>
+          <div id="tide-chart" class="tide-chart"></div>
+          <div id="tide-list" class="event-list"></div>
+          <div class="section-row">
+            <h2>NOAA observations</h2>
+          </div>
+          <div id="noaa-grid" class="metric-grid compact"></div>
+        </section>
+
+        <section id="stations" class="tab-panel">
+          <div id="station-list" class="station-list"></div>
+        </section>
+
+        <section id="sources" class="tab-panel">
+          <div class="source-list">
+            <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo weather, marine, geocoding and air quality</a>
+            <a href="https://api.tidesandcurrents.noaa.gov/api/prod/" target="_blank" rel="noreferrer">NOAA CO-OPS data API</a>
+            <a href="https://api.tidesandcurrents.noaa.gov/mdapi/prod/" target="_blank" rel="noreferrer">NOAA CO-OPS metadata API</a>
+            <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap tiles and contributors</a>
+          </div>
+          <div class="raw-block">
+            <div class="section-row">
+              <h2>Raw payload snapshot</h2>
+              <button id="copy-raw" type="button">Copy JSON</button>
+            </div>
+            <pre id="raw-output">{}</pre>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <template id="metric-template">
+      <article class="metric">
+        <p class="metric-label"></p>
+        <p class="metric-value"></p>
+        <p class="metric-detail"></p>
+      </article>
+    </template>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
