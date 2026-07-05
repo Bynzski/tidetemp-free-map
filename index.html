@@ -42,6 +42,7 @@
 
         <nav class="tabs" aria-label="Data views">
           <button class="tab is-active" data-tab="conditions" type="button">Conditions</button>
+          <button class="tab" data-tab="signals" type="button">Signals</button>
           <button class="tab" data-tab="tides" type="button">Tides</button>
           <button class="tab" data-tab="stations" type="button">Stations</button>
           <button class="tab" data-tab="sources" type="button">Sources</button>
@@ -120,6 +121,42 @@
           <div id="hourly-strip" class="hourly-strip"></div>
         </section>
 
+        <section id="signals" class="tab-panel">
+          <div class="section-row">
+            <h2>Official alerts</h2>
+            <span id="nws-alert-status" class="muted"></span>
+          </div>
+          <div id="nws-alert-list" class="event-list"></div>
+
+          <div class="section-row">
+            <h2>Official forecast</h2>
+            <span id="nws-forecast-status" class="muted"></span>
+          </div>
+          <div id="nws-grid" class="metric-grid compact"></div>
+
+          <div class="section-row">
+            <h2>Live water gauges</h2>
+            <span id="usgs-status" class="muted"></span>
+          </div>
+          <div id="usgs-grid" class="metric-grid compact"></div>
+
+          <div class="section-row">
+            <h2>River discharge forecast</h2>
+            <span id="flood-status" class="muted"></span>
+          </div>
+          <article class="chart-card">
+            <div class="chart-wrap">
+              <canvas id="flood-chart"></canvas>
+            </div>
+          </article>
+
+          <div class="section-row">
+            <h2>Nearest buoy</h2>
+            <span id="buoy-status" class="muted"></span>
+          </div>
+          <div id="buoy-grid" class="metric-grid compact"></div>
+        </section>
+
         <section id="tides" class="tab-panel">
           <div class="section-row">
             <h2>NOAA tide predictions</h2>
@@ -152,6 +189,9 @@
         <section id="sources" class="tab-panel">
           <div class="source-list">
             <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo weather, marine, geocoding and air quality</a>
+            <a href="https://www.weather.gov/documentation/services-web-api" target="_blank" rel="noreferrer">National Weather Service alerts and forecasts</a>
+            <a href="https://waterservices.usgs.gov/" target="_blank" rel="noreferrer">USGS live water services</a>
+            <a href="https://www.ndbc.noaa.gov/" target="_blank" rel="noreferrer">NOAA NDBC buoy observations</a>
             <a href="https://api.tidesandcurrents.noaa.gov/api/prod/" target="_blank" rel="noreferrer">NOAA CO-OPS data API</a>
             <a href="https://api.tidesandcurrents.noaa.gov/mdapi/prod/" target="_blank" rel="noreferrer">NOAA CO-OPS metadata API</a>
             <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap tiles and contributors</a>

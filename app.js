@@ -3,8 +3,12 @@ const API = {
   osmGeocode: "https://nominatim.openstreetmap.org/search",
   weather: "https://api.open-meteo.com/v1/forecast",
   history: "https://archive-api.open-meteo.com/v1/archive",
+  flood: "https://flood-api.open-meteo.com/v1/flood",
   marine: "https://marine-api.open-meteo.com/v1/marine",
   air: "https://air-quality-api.open-meteo.com/v1/air-quality",
+  nws: "https://api.weather.gov",
+  usgsIv: "https://waterservices.usgs.gov/nwis/iv/",
+  ndbcLatest: "/api/ndbc-latest",
   noaaMeta: "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json",
   noaaData: "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter",
 };
@@ -180,6 +184,16 @@ const els = {
   tideStationLabel: document.querySelector("#tide-station-label"),
   tideRangeNote: document.querySelector("#tide-range-note"),
   tideLineChart: document.querySelector("#tide-line-chart"),
+  nwsAlertStatus: document.querySelector("#nws-alert-status"),
+  nwsAlertList: document.querySelector("#nws-alert-list"),
+  nwsForecastStatus: document.querySelector("#nws-forecast-status"),
+  nwsGrid: document.querySelector("#nws-grid"),
+  usgsStatus: document.querySelector("#usgs-status"),
+  usgsGrid: document.querySelector("#usgs-grid"),
+  floodStatus: document.querySelector("#flood-status"),
+  floodChart: document.querySelector("#flood-chart"),
+  buoyStatus: document.querySelector("#buoy-status"),
+  buoyGrid: document.querySelector("#buoy-grid"),
   tideChart: document.querySelector("#tide-chart"),
   tideList: document.querySelector("#tide-list"),
   noaaGrid: document.querySelector("#noaa-grid"),
@@ -537,12 +551,16 @@ async function inspectLocation(location) {
   updateMarker(lat, lon, label);
 
   try {
-    const [weather, marine, air, stations, history] = await Promise.allSettled([
+    const [weather, marine, air, stations, history, flood, nws, usgs, buoy] = await Promise.allSettled([
       getWeather(lat, lon),
       getMarine(lat, lon),
       getAirQuality(lat, lon),
       getNearestStations(lat, lon),
       getHistoricalWeather(lat, lon),
+      getFloodForecast(lat, lon),
+      getNwsSignals(lat, lon),
+      getUsgsInstantValues(lat, lon),
+      getNearestBuoy(lat, lon),
     ]);
 
     const resolved = {
@@ -551,6 +569,10 @@ async function inspectLocation(location) {
       air: valueOrNull(air),
       stations: valueOrNull(stations),
       history: valueOrNull(history),
+      flood: valueOrNull(flood),
+      nws: valueOrNull(nws),
+      usgs: valueOrNull(usgs),
+      buoy: valueOrNull(buoy),
     };
 
     const noaa = resolved.stations ? await getNoaaDetails(resolved.stations) : {};
@@ -570,8 +592,12 @@ async function getWeather(lat, lon) {
     current: [
       "temperature_2m",
       "relative_humidity_2m",
+      "dew_point_2m",
       "apparent_temperature",
       "precipitation",
+      "rain",
+      "showers",
+      "snowfall",
       "weather_code",
       "cloud_cover",
       "pressure_msl",
@@ -579,6 +605,8 @@ async function getWeather(lat, lon) {
       "wind_speed_10m",
       "wind_direction_10m",
       "wind_gusts_10m",
+      "visibility",
+      "is_day",
     ].join(","),
     hourly: [
       "temperature_2m",
@@ -675,12 +703,79 @@ async function getAirQuality(lat, lon) {
   const params = {
     latitude: lat,
     longitude: lon,
-    current: "pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,us_aqi",
-    hourly: "pm10,pm2_5,us_aqi,uv_index",
+    current: [
+      "european_aqi",
+      "us_aqi",
+      "pm10",
+      "pm2_5",
+      "carbon_monoxide",
+      "nitrogen_dioxide",
+      "sulphur_dioxide",
+      "ozone",
+      "aerosol_optical_depth",
+      "dust",
+      "uv_index",
+      "uv_index_clear_sky",
+      "ammonia",
+      "alder_pollen",
+      "birch_pollen",
+      "grass_pollen",
+      "mugwort_pollen",
+      "olive_pollen",
+      "ragweed_pollen",
+    ].join(","),
+    hourly: "pm10,pm2_5,us_aqi,uv_index,dust,grass_pollen,ragweed_pollen",
     timezone: "auto",
-    forecast_days: 3,
+    forecast_days: 5,
   };
   return fetchJson(withParams(API.air, params));
+}
+
+async function getFloodForecast(lat, lon) {
+  return fetchJson(withParams(API.flood, {
+    latitude: lat,
+    longitude: lon,
+    daily: "river_discharge,river_discharge_mean,river_discharge_max,river_discharge_min,river_discharge_p25,river_discharge_p75",
+    past_days: 7,
+    forecast_days: 30,
+    cell_selection: "nearest",
+  }));
+}
+
+async function getNwsSignals(lat, lon) {
+  if (!isProbablyUs(lat, lon)) return { unavailable: "Outside likely NWS coverage" };
+  const alerts = await fetchJson(withParams(`${API.nws}/alerts/active`, { point: `${lat},${lon}` }));
+  let point = null;
+  let hourly = null;
+  try {
+    point = await fetchJson(`${API.nws}/points/${lat.toFixed(4)},${lon.toFixed(4)}`);
+    if (point?.properties?.forecastHourly) hourly = await fetchJson(point.properties.forecastHourly);
+  } catch (error) {
+    point = { error: error.message };
+  }
+  return { alerts, point, hourly };
+}
+
+async function getUsgsInstantValues(lat, lon) {
+  if (!isProbablyUs(lat, lon)) return { unavailable: "Outside likely USGS live water coverage" };
+  const box = bbox(lat, lon, 0.35);
+  return fetchJson(withParams(API.usgsIv, {
+    format: "json",
+    bBox: box.join(","),
+    parameterCd: "00060,00065,00010,00400,00095,00300,63680",
+    siteStatus: "all",
+  }));
+}
+
+async function getNearestBuoy(lat, lon) {
+  try {
+    const response = await fetch(API.ndbcLatest);
+    if (!response.ok) throw new Error(`NDBC latest unavailable: ${response.status}`);
+    const text = await response.text();
+    return parseNearestBuoy(text, lat, lon);
+  } catch (error) {
+    return { error: error.message };
+  }
 }
 
 async function getNearestStations(lat, lon) {
@@ -777,7 +872,7 @@ async function getNoaaLatest(station, product, extra = {}) {
 }
 
 function renderAll(data) {
-  const { location, weather, marine, air, stations, noaa, history } = data;
+  const { location, weather, marine, air, stations, noaa, history, flood, nws, usgs, buoy } = data;
   renderSummary(location, weather, marine);
   renderVisualDashboard({ weather, history, air });
   renderWeather(weather);
@@ -786,6 +881,7 @@ function renderAll(data) {
   renderHourly(weather);
   renderTides(noaa, stations);
   renderNoaaObservations(noaa, stations);
+  renderSignals({ flood, nws, usgs, buoy, location });
   renderStations(stations);
   renderRaw();
   renderStationMarkers(stations);
@@ -1007,10 +1103,12 @@ function renderWeather(weather) {
   renderMetrics(els.weatherGrid, [
     ["Temperature", format(c.temperature_2m, units.temperature_2m), formatTime(c.time)],
     ["Feels like", format(c.apparent_temperature, units.apparent_temperature), WEATHER_CODE[c.weather_code] || `Code ${c.weather_code}`],
-    ["Humidity", format(c.relative_humidity_2m, units.relative_humidity_2m), "Relative humidity"],
+    ["Humidity", format(c.relative_humidity_2m, units.relative_humidity_2m), `Dew point ${format(c.dew_point_2m, units.dew_point_2m)}`],
     ["Wind", format(c.wind_speed_10m, units.wind_speed_10m), `${compass(c.wind_direction_10m)} ${format(c.wind_gusts_10m, units.wind_gusts_10m)} gusts`],
     ["Pressure", format(c.pressure_msl, units.pressure_msl), `Surface ${format(c.surface_pressure, units.surface_pressure)}`],
-    ["Clouds", format(c.cloud_cover, units.cloud_cover), `Precip ${format(c.precipitation, units.precipitation)}`],
+    ["Clouds", format(c.cloud_cover, units.cloud_cover), `Visibility ${format(c.visibility, units.visibility)}`],
+    ["Rain now", format(c.rain, units.rain), `Showers ${format(c.showers, units.showers)}`],
+    ["Snow now", format(c.snowfall, units.snowfall), c.is_day ? "Daylight" : "Night"],
   ]);
 }
 
@@ -1045,11 +1143,15 @@ function renderAir(air) {
   els.aqTime.textContent = formatTime(c.time);
   renderMetrics(els.airGrid, [
     ["US AQI", format(c.us_aqi, units.us_aqi), aqiLabel(c.us_aqi)],
+    ["EU AQI", format(c.european_aqi, units.european_aqi), "European index"],
     ["PM2.5", format(c.pm2_5, units.pm2_5), "Fine particles"],
     ["PM10", format(c.pm10, units.pm10), "Coarse particles"],
     ["Ozone", format(c.ozone, units.ozone), "O3"],
     ["NO2", format(c.nitrogen_dioxide, units.nitrogen_dioxide), "Nitrogen dioxide"],
     ["CO", format(c.carbon_monoxide, units.carbon_monoxide), "Carbon monoxide"],
+    ["Dust", format(c.dust, units.dust), `AOD ${format(c.aerosol_optical_depth, units.aerosol_optical_depth)}`],
+    ["UV", format(c.uv_index, units.uv_index), `Clear sky ${format(c.uv_index_clear_sky, units.uv_index_clear_sky)}`],
+    ["Grass pollen", format(c.grass_pollen, units.grass_pollen), `Ragweed ${format(c.ragweed_pollen, units.ragweed_pollen)}`],
   ]);
 }
 
@@ -1185,6 +1287,123 @@ function renderNoaaObservations(noaa, stations) {
     ["Current max/slack", currentValue(noaa?.currents), "", stations?.currents ? `${stations.currents.name} · ${stations.currents.distanceNm.toFixed(1)} nm` : "Unavailable"],
   ];
   renderMetrics(els.noaaGrid, data.map(([label, value, unit, detail]) => [label, value == null ? "No data" : `${value}${unit ? ` ${unit}` : ""}`, detail || "NOAA CO-OPS"]));
+}
+
+function renderSignals({ flood, nws, usgs, buoy, location }) {
+  renderNws(nws);
+  renderUsgs(usgs, location);
+  renderFlood(flood);
+  renderBuoy(buoy);
+}
+
+function renderNws(nws) {
+  if (!nws || nws.unavailable) {
+    els.nwsAlertStatus.textContent = nws?.unavailable || "Unavailable";
+    els.nwsForecastStatus.textContent = "Unavailable";
+    els.nwsAlertList.innerHTML = "";
+    renderNotice(els.nwsGrid, "NWS data is U.S.-only");
+    return;
+  }
+
+  const alerts = nws.alerts?.features || [];
+  els.nwsAlertStatus.textContent = alerts.length ? `${alerts.length} active` : "No active alerts";
+  els.nwsAlertList.innerHTML = "";
+  if (!alerts.length) {
+    els.nwsAlertList.innerHTML = '<article class="event-item"><div><strong>No active watches, warnings, or advisories</strong><p class="muted">National Weather Service active-alert endpoint</p></div><span class="event-badge low">Clear</span></article>';
+  } else {
+    alerts.slice(0, 5).forEach((alert) => {
+      const props = alert.properties || {};
+      const item = document.createElement("article");
+      item.className = "event-item";
+      item.innerHTML = `
+        <div>
+          <strong>${escapeHtml(props.event || "NWS alert")}</strong>
+          <p class="muted">${escapeHtml(props.severity || "Unknown")} · ${escapeHtml(props.areaDesc || "Area unavailable")}</p>
+        </div>
+        <span class="event-badge">${escapeHtml(props.certainty || "Alert")}</span>
+      `;
+      els.nwsAlertList.appendChild(item);
+    });
+  }
+
+  const periods = nws.hourly?.properties?.periods || [];
+  els.nwsForecastStatus.textContent = periods.length ? `${periods.length} hourly periods` : "No hourly forecast";
+  renderMetrics(els.nwsGrid, periods.slice(0, 6).map((period) => [
+    hourLabel(period.startTime),
+    `${period.temperature} °${period.temperatureUnit}`,
+    `${period.shortForecast} · ${period.windSpeed} ${period.windDirection}`,
+  ]));
+}
+
+function renderUsgs(usgs, location) {
+  const series = usgs?.value?.timeSeries || [];
+  if (!series.length) {
+    els.usgsStatus.textContent = usgs?.unavailable || "No nearby live gauges";
+    renderNotice(els.usgsGrid, "No USGS live water values in the nearby search box");
+    return;
+  }
+
+  const readings = series
+    .map((item) => normalizeUsgsSeries(item, location))
+    .filter(Boolean)
+    .sort((a, b) => a.distanceNm - b.distanceNm)
+    .slice(0, 9);
+
+  els.usgsStatus.textContent = `${readings.length} nearby readings`;
+  renderMetrics(els.usgsGrid, readings.map((reading) => [
+    reading.label,
+    `${reading.value} ${reading.unit}`,
+    `${reading.site} · ${reading.distanceNm.toFixed(1)} nm · ${formatTime(reading.time)}`,
+  ]));
+}
+
+function renderFlood(flood) {
+  const daily = flood?.daily;
+  const values = daily?.river_discharge || [];
+  const valid = values.filter((value) => Number.isFinite(Number(value))).map(Number);
+  if (!daily?.time?.length || valid.length < 2 || !window.Chart) {
+    els.floodStatus.textContent = "No modeled river near point";
+    destroyChart("flood");
+    return;
+  }
+
+  const latest = valid[0];
+  const peak = Math.max(...valid);
+  els.floodStatus.textContent = `Now ${formatNumber(latest)} m³/s · peak ${formatNumber(peak)} m³/s`;
+  setChart("flood", els.floodChart, {
+    type: "line",
+    data: {
+      labels: daily.time.map(shortDate),
+      datasets: [{
+        label: "River discharge",
+        data: values,
+        borderColor: "#2f7d58",
+        backgroundColor: "rgba(47, 125, 88, 0.14)",
+        fill: true,
+        tension: 0.35,
+        pointRadius: 0,
+      }],
+    },
+    options: chartOptions({ yTitle: flood.daily_units?.river_discharge || "m³/s", legend: false }),
+  });
+}
+
+function renderBuoy(buoy) {
+  if (!buoy || buoy.error || !buoy.id) {
+    els.buoyStatus.textContent = buoy?.error ? "Unavailable on local dev" : "No buoy data";
+    renderNotice(els.buoyGrid, buoy?.error || "Nearest buoy feed unavailable");
+    return;
+  }
+
+  els.buoyStatus.textContent = `${buoy.id} · ${buoy.distanceNm.toFixed(1)} nm · ${formatTime(buoy.time)}`;
+  renderMetrics(els.buoyGrid, [
+    ["Wave height", format(buoy.waveHeightM, "m"), `Period ${format(buoy.dominantPeriodSec, "s")}`],
+    ["Wind", format(msToMph(buoy.windSpeedMs), "mph"), `${compass(buoy.windDirectionDeg)} gust ${format(msToMph(buoy.gustMs), "mph")}`],
+    ["Pressure", format(buoy.pressureHpa, "hPa"), `Tendency ${format(buoy.pressureTendencyHpa, "hPa")}`],
+    ["Air temp", format(cToF(buoy.airTempC), "°F"), `Dew ${format(cToF(buoy.dewpointC), "°F")}`],
+    ["Water temp", format(cToF(buoy.waterTempC), "°F"), "NOAA NDBC latest observations"],
+    ["Tide", format(buoy.tideFt, "ft"), "If station reports tide"],
+  ]);
 }
 
 function renderStations(stations) {
@@ -1592,6 +1811,86 @@ function currentValue(currents) {
   const speed = point.Velocity_Major || point.v || point.speed;
   const type = point.Type || point.type || "";
   return [type, speed ? `${speed} kn` : ""].filter(Boolean).join(" ");
+}
+
+function normalizeUsgsSeries(item, location) {
+  const source = item.sourceInfo;
+  const variable = item.variable;
+  const latest = item.values?.[0]?.value?.at(-1);
+  const geo = source?.geoLocation?.geogLocation;
+  if (!source || !variable || !latest || !geo) return null;
+  const lat = Number(geo.latitude);
+  const lon = Number(geo.longitude);
+  return {
+    site: source.siteName || source.siteCode?.[0]?.value || "USGS site",
+    label: variable.variableDescription || variable.variableName || "USGS value",
+    value: latest.value,
+    unit: variable.unit?.unitCode || "",
+    time: latest.dateTime,
+    distanceNm: distanceNm(location.lat, location.lon, lat, lon),
+  };
+}
+
+function parseNearestBuoy(text, lat, lon) {
+  const rows = text.split("\n").filter((line) => line && !line.startsWith("#"));
+  const buoys = rows.map((line) => {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 22) return null;
+    const latitude = Number(parts[1]);
+    const longitude = Number(parts[2]);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+    return {
+      id: parts[0],
+      latitude,
+      longitude,
+      time: `${parts[3]}-${parts[4]}-${parts[5]}T${parts[6]}:${parts[7]}:00Z`,
+      windDirectionDeg: ndbcNumber(parts[8]),
+      windSpeedMs: ndbcNumber(parts[9]),
+      gustMs: ndbcNumber(parts[10]),
+      waveHeightM: ndbcNumber(parts[11]),
+      dominantPeriodSec: ndbcNumber(parts[12]),
+      averagePeriodSec: ndbcNumber(parts[13]),
+      meanWaveDirectionDeg: ndbcNumber(parts[14]),
+      pressureHpa: ndbcNumber(parts[15]),
+      pressureTendencyHpa: ndbcNumber(parts[16]),
+      airTempC: ndbcNumber(parts[17]),
+      waterTempC: ndbcNumber(parts[18]),
+      dewpointC: ndbcNumber(parts[19]),
+      visibilityNm: ndbcNumber(parts[20]),
+      tideFt: ndbcNumber(parts[21]),
+      distanceNm: distanceNm(lat, lon, latitude, longitude),
+    };
+  }).filter(Boolean);
+
+  return buoys.sort((a, b) => a.distanceNm - b.distanceNm)[0] || null;
+}
+
+function ndbcNumber(value) {
+  return value === "MM" ? null : Number(value);
+}
+
+function cToF(value) {
+  if (!Number.isFinite(Number(value))) return null;
+  return Number(value) * 9 / 5 + 32;
+}
+
+function msToMph(value) {
+  if (!Number.isFinite(Number(value))) return null;
+  return Number(value) * 2.236936;
+}
+
+function bbox(lat, lon, delta) {
+  return [
+    clamp(lon - delta, -180, 180).toFixed(4),
+    clamp(lat - delta, -90, 90).toFixed(4),
+    clamp(lon + delta, -180, 180).toFixed(4),
+    clamp(lat + delta, -90, 90).toFixed(4),
+  ];
+}
+
+function isProbablyUs(lat, lon) {
+  return (lat >= 18 && lat <= 72 && lon >= -170 && lon <= -64)
+    || (lat >= -15 && lat <= 25 && lon >= 140 && lon <= 180);
 }
 
 function escapeHtml(value) {
